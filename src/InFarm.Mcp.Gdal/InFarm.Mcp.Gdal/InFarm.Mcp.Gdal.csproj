@@ -1,0 +1,49 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
+        <InvariantGlobalization>true</InvariantGlobalization>
+        <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>infarm-mcp-gdal</ToolCommandName>
+        <PackageId>InFarm.Mcp.Gdal</PackageId>
+        <PackageType>McpServer</PackageType>
+        <Version>0.1.0</Version>
+        <Authors>InFarm</Authors>
+        <Description>Model Context Protocol (MCP) server that exposes GDAL and OGR raster, vector, coordinate reference system and virtual filesystem functionality to AI agents. The server bundles its own GDAL native libraries and runs over standard I/O.</Description>
+        <PackageTags>mcp;mcp-server;gdal;ogr;proj;gis;geospatial;raster;vector;ai</PackageTags>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <Copyright>Copyright (c) 2026 InFarm</Copyright>
+        <PackageProjectUrl>https://github.com/PerceptionAg/mcp-gdal</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/PerceptionAg/mcp-gdal</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageOutputPath>$(MSBuildThisFileDirectory)..\artifacts\packages</PackageOutputPath>
+        <!-- Each runtime identifier gets its own tool package so that a client downloads the native GDAL libraries for one platform only. -->
+        <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+        <SelfContained>false</SelfContained>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="MaxRev.Gdal.Universal" Version="3.13.3.611" />
+        <PackageReference Include="Microsoft.Extensions.Hosting" Version="11.0.0" />
+        <PackageReference Include="ModelContextProtocol" Version="2.4.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+        <None Include=".mcp\server.json" Pack="true" PackagePath="\.mcp\" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="InFarm.Mcp.Gdal.Tests" />
+    </ItemGroup>
+
+</Project>

@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  SOLUTION: src/InFarm.Mcp.Gdal/InFarm.Mcp.Gdal.slnx
+  PROJECT: src/InFarm.Mcp.Gdal/InFarm.Mcp.Gdal/InFarm.Mcp.Gdal.csproj
+  PACKAGES: src/InFarm.Mcp.Gdal/artifacts/packages
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore ${{ env.SOLUTION }}
+      - run: dotnet build ${{ env.SOLUTION }} --no-restore -c Release
+      - run: dotnet test ${{ env.SOLUTION }} --no-build -c Release --logger trx --results-directory TestResults
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}
+          path: TestResults
+
+  pack:
+    name: Pack
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Check that the tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME#v}"
+          project=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$PROJECT")
+          server=$(grep -o '"version": *"[^"]*"' src/InFarm.Mcp.Gdal/InFarm.Mcp.Gdal/.mcp/server.json | sed 's/.*"\([^"]*\)"$/\1/' | sort -u)
+          echo "tag=$tag project=$project server.json=$server"
+          [ "$tag" = "$project" ] && [ "$server" = "$tag" ] || { echo "::error::Set <Version> in the .csproj and both versions in .mcp/server.json to $tag."; exit 1; }
+      - run: dotnet pack ${{ env.PROJECT }} -c Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packages
+          path: ${{ env.PACKAGES }}/*.nupkg
+
+  install:
+    name: Installed tool (${{ matrix.os }})
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, ubuntu-24.04-arm, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: packages
+      - name: Install the tool and query it over MCP
+        shell: bash
+        run: |
+          set -euo pipefail
+          version=$(ls packages | sed -n 's/^InFarm\.Mcp\.Gdal\.\([0-9][^/]*\)\.nupkg$/\1/p')
+          dotnet tool install InFarm.Mcp.Gdal --tool-path tool --add-source packages --version "$version"
+          requests='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}
+          {"jsonrpc":"2.0","method":"notifications/initialized"}
+          {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"gdal_crs_transform_points","arguments":{"sourceCrs":"EPSG:4326","targetCrs":"EPSG:32755","points":[[147,-36]]}}}'
+          reply=$({ printf '%s\n' "$requests"; sleep 30; } | dnx InFarm.Mcp.Gdal@"$version" --yes --add-source packages | head -n 2 | tail -n 1)
+          echo "$reply" | cut -c1-400
+          echo "$reply" | grep -q '"x":500000'
+
+  # Runs only for a pushed v* tag and waits for approval in the nuget environment before it publishes.
+  release:
+    name: Publish to nuget.org
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, install]
+    runs-on: ubuntu-latest
+    environment: nuget
+    permissions:
+      id-token: write
+      contents: write
+    steps:
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - uses: actions/download-artifact@v4
+        with:
+          name: packages
+          path: packages
+      - name: Log in to nuget.org with trusted publishing
+        id: login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+      # The platform packages go first, so that the top-level package never points to packages that do not exist yet.
+      - name: Push the packages
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          push() { dotnet nuget push "$1" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate; }
+          rid='\.(win|linux|osx)-(x64|arm64)\.'
+          for package in packages/*.nupkg; do [[ "$package" =~ $rid ]] && push "$package"; done
+          for package in packages/*.nupkg; do [[ "$package" =~ $rid ]] || push "$package"; done
+      - name: Create a GitHub release with the packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" packages/*.nupkg --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes

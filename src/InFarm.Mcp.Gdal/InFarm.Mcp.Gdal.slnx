@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="InFarm.Mcp.Gdal/InFarm.Mcp.Gdal.csproj" />
+  <Project Path="InFarm.Mcp.Gdal.Tests/InFarm.Mcp.Gdal.Tests.csproj" />
+</Solution>

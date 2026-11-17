@@ -1,0 +1,35 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "io.infarm/mcp-gdal",
+  "description": "GDAL and OGR raster, vector, coordinate reference system and virtual filesystem tools for AI agents.",
+  "version": "0.1.0",
+  "repository": {
+    "url": "https://github.com/PerceptionAg/mcp-gdal",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "nuget",
+      "identifier": "InFarm.Mcp.Gdal",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [],
+      "environmentVariables": [
+        {
+          "name": "INFARM_MCP_GDAL_ALLOWEDROOTS",
+          "description": "Directories that the tools may read and write, separated by ';'. The local filesystem is unrestricted when the variable is not set.",
+          "isRequired": false,
+          "isSecret": false
+        },
+        {
+          "name": "INFARM_MCP_GDAL_READONLY",
+          "description": "Set to true to reject every operation that writes outside /vsimem/.",
+          "isRequired": false,
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
