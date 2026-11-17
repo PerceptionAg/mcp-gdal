@@ -85,12 +85,22 @@ jobs:
           set -euo pipefail
           version=$(ls packages | sed -n 's/^InFarm\.Mcp\.Gdal\.\([0-9][^/]*\)\.nupkg$/\1/p')
           dotnet tool install InFarm.Mcp.Gdal --tool-path tool --add-source packages --version "$version"
+          if [ -f tool/infarm-mcp-gdal.cmd ]; then cmd.exe //c "tool\\infarm-mcp-gdal.cmd --version"; else ./tool/infarm-mcp-gdal --version; fi
+          # The dnx script wraps "dotnet dnx", which bash on Windows can call without the .cmd extension.
+          # The first run downloads and caches the package, so the MCP exchange below starts quickly.
+          dotnet dnx InFarm.Mcp.Gdal@"$version" --yes --add-source packages -- --version
           requests='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}
           {"jsonrpc":"2.0","method":"notifications/initialized"}
           {"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"gdal_crs_transform_points","arguments":{"sourceCrs":"EPSG:4326","targetCrs":"EPSG:32755","points":[[147,-36]]}}}'
-          reply=$({ printf '%s\n' "$requests"; sleep 30; } | dnx InFarm.Mcp.Gdal@"$version" --yes --add-source packages | head -n 2 | tail -n 1)
-          echo "$reply" | cut -c1-400
-          echo "$reply" | grep -q '"x":500000'
+          set +o pipefail
+          { printf '%s\n' "$requests"; sleep 90; } | dotnet dnx InFarm.Mcp.Gdal@"$version" --yes --add-source packages 2> stderr.txt | head -n 2 > replies.txt || true
+          set -o pipefail
+          cut -c1-400 replies.txt
+          if ! grep -q '"x":500000' replies.txt; then
+            echo "::error::The tool did not return the expected transformation."
+            head -c 4000 stderr.txt
+            exit 1
+          fi
 
   # Runs only for a pushed v* tag and waits for approval in the nuget environment before it publishes.
   release:
